@@ -1,0 +1,216 @@
+import SQLite from 'react-native-sqlite-storage';
+
+const db = SQLite.openDatabase(
+  {
+    name: 'PastoralCrisma.db',
+    location: 'default',
+  },
+  () => {},
+  (error) => console.log('Database error: ', error)
+);
+
+export const createTables = () => {
+  db.transaction((txn) => {
+    txn.executeSql(
+      `CREATE TABLE IF NOT EXISTS Stock (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        quantity INTEGER
+      );`,
+      [],
+      () => console.log('Stock table created successfully.'),
+      (error) => console.log('Error creating Stock table: ', error)
+    );
+    txn.executeSql(
+      `CREATE TABLE IF NOT EXISTS Sales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER,
+        quantity INTEGER,
+        date TEXT,
+        FOREIGN KEY (item_id) REFERENCES Stock(id)
+      );`,
+      [],
+      () => console.log('Sales table created successfully.'),
+      (error) => console.log('Error creating Sales table: ', error)
+    );
+  });
+};
+
+export default db;
+
+import React, { useEffect, useState } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, Text, Button } from 'react-native';
+import { createTables } from './db/database';
+import StockScreen from './screens/StockScreen';
+import SalesScreen from './screens/SalesScreen';
+
+const Stack = createNativeStackNavigator();
+
+const App = () => {
+  useEffect(() => {
+    createTables();
+  }, []);
+
+  return (
+    <NavigationContainer>
+      <Stack.Navigator initialRouteName="Home">
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="Stock" component={StockScreen} />
+        <Stack.Screen name="Sales" component={SalesScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
+
+const HomeScreen = ({ navigation }) => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <Text style={{ fontSize: 20, marginBottom: 20 }}>Bem-vindo à Pastoral Crisma</Text>
+    <Button title="Gerenciar Estoque" onPress={() => navigation.navigate('Stock')} />
+    <Button title="Registrar Venda" onPress={() => navigation.navigate('Sales')} />
+  </View>
+);
+
+export default App;
+
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, Button, FlatList } from 'react-native';
+import db from '../db/database';
+
+const StockScreen = () => {
+  const [items, setItems] = useState([]);
+  const [name, setName] = useState('');
+  const [quantity, setQuantity] = useState('');
+
+  const fetchItems = () => {
+    db.transaction((txn) => {
+      txn.executeSql(
+        'SELECT * FROM Stock',
+        [],
+        (_, results) => {
+          const rows = results.rows.raw();
+          setItems(rows);
+        },
+        (error) => console.log('Error fetching stock: ', error)
+      );
+    });
+  };
+
+  const addItem = () => {
+    if (name && quantity) {
+      db.transaction((txn) => {
+        txn.executeSql(
+          'INSERT INTO Stock (name, quantity) VALUES (?, ?)',
+          [name, parseInt(quantity)],
+          () => {
+            setName('');
+            setQuantity('');
+            fetchItems();
+          },
+          (error) => console.log('Error adding item: ', error)
+        );
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, padding: 20 }}>
+      <TextInput
+        placeholder="Nome da camisa"
+        value={name}
+        onChangeText={setName}
+        style={{ borderBottomWidth: 1, marginBottom: 10 }}
+      />
+      <TextInput
+        placeholder="Quantidade"
+        value={quantity}
+        onChangeText={setQuantity}
+        keyboardType="numeric"
+        style={{ borderBottomWidth: 1, marginBottom: 20 }}
+      />
+      <Button title="Adicionar ao Estoque" onPress={addItem} />
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }) => (
+          <Text>{`${item.name} - ${item.quantity} unidades`}</Text>
+        )}
+        style={{ marginTop: 20 }}
+      />
+    </View>
+  );
+};
+
+export default StockScreen;
+
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, Button, FlatList } from 'react-native';
+import db from '../db/database';
+
+const SalesScreen = () => {
+  const [items, setItems] = useState([]);
+  const [selectedItemId, setSelectedItemId] = useState(null);
+  const [quantity, setQuantity] = useState('');
+
+  const fetchItems = () => {
+    db.transaction((txn) => {
+      txn.executeSql(
+        'SELECT * FROM Stock',
+        [],
+        (_, results) => {
+          setItems(results.rows.raw());
+        },
+        (error) => console.log('Error fetching items: ', error)
+      );
+    });
+  };
+
+  const registerSale = () => {
+    if (selectedItemId && quantity) {
+      db.transaction((txn) => {
+        txn.executeSql(
+          'INSERT INTO Sales (item_id, quantity, date) VALUES (?, ?, ?)',
+          [selectedItemId, parseInt(quantity), new Date().toISOString()],
+          () => {
+            setQuantity('');
+            fetchItems();
+          },
+          (error) => console.log('Error registering sale: ', error)
+        );
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, padding: 20 }}>
+      <Text>Selecionar Item:</Text>
+      {items.map((item) => (
+        <Button
+          key={item.id}
+          title={item.name}
+          onPress={() => setSelectedItemId(item.id)}
+        />
+      ))}
+      <TextInput
+        placeholder="Quantidade vendida"
+        value={quantity}
+        onChangeText={setQuantity}
+        keyboardType="numeric"
+        style={{ borderBottomWidth: 1, marginBottom: 20 }}
+      />
+      <Button title="Registrar Venda" onPress={registerSale} />
+    </View>
+  );
+};
+
+export default SalesScreen;
+
